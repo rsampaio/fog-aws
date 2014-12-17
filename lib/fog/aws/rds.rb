@@ -111,6 +111,8 @@ module Fog
           @data = nil
         end
 
+        attr_accessor :region
+
         def initialize(options={})
           @use_iam_profile = options[:use_iam_profile]
           @region = options[:region] || 'us-east-1'
