@@ -25,6 +25,7 @@ module Fog
       request :create_role
       request :create_user
       request :delete_access_key
+      request :delete_account_password_policy      
       request :delete_account_alias
       request :delete_group
       request :delete_group_policy
@@ -37,6 +38,7 @@ module Fog
       request :delete_user
       request :delete_user_policy
       request :get_account_summary
+      request :get_account_password_policy
       request :get_group
       request :get_group_policy
       request :get_instance_profile
@@ -68,6 +70,7 @@ module Fog
       request :update_access_key
       request :update_group
       request :update_login_profile
+      request :update_account_password_policy
       request :update_server_certificate
       request :update_signing_certificate
       request :update_user
@@ -170,10 +173,8 @@ module Fog
         # ==== Returns
         # * IAM object with connection to AWS.
         def initialize(options={})
-          require 'fog/core/parser'
 
           @use_iam_profile = options[:use_iam_profile]
-          setup_credentials(options)
           @connection_options     = options[:connection_options] || {}
           @instrumentor           = options[:instrumentor]
           @instrumentor_name      = options[:instrumentor_name] || 'fog.aws.iam'
@@ -183,6 +184,9 @@ module Fog
           @port       = options[:port]        || 443
           @scheme     = options[:scheme]      || 'https'
           @connection = Fog::XML::Connection.new("#{@scheme}://#{@host}:#{@port}#{@path}", @persistent, @connection_options)
+
+          setup_credentials(options)
+
         end
 
         def reload
@@ -197,7 +201,8 @@ module Fog
           @aws_session_token      = options[:aws_session_token]
           @aws_credentials_expire_at = options[:aws_credentials_expire_at]
 
-          @hmac                   = Fog::HMAC.new('sha256', @aws_secret_access_key)
+          #global services that have no region are signed with the us-east-1 region
+          @signer = Fog::AWS::SignatureV4.new( @aws_access_key_id, @aws_secret_access_key,'us-east-1','iam')
         end
 
         def request(params)
@@ -205,34 +210,35 @@ module Fog
           idempotent  = params.delete(:idempotent)
           parser      = params.delete(:parser)
 
-          body = Fog::AWS.signed_params(
+          body, headers = Fog::AWS.signed_params_v4(
             params,
+            { 'Content-Type' => 'application/x-www-form-urlencoded' },
             {
-              :aws_access_key_id  => @aws_access_key_id,
+              :signer             => @signer,
               :aws_session_token  => @aws_session_token,
-              :hmac               => @hmac,
               :host               => @host,
               :path               => @path,
               :port               => @port,
-              :version            => '2010-05-08'
+              :version            => '2010-05-08',
+              :method             => 'POST'
             }
           )
 
           if @instrumentor
             @instrumentor.instrument("#{@instrumentor_name}.request", params) do
-              _request(body, idempotent, parser)
+              _request(body, headers, idempotent, parser)
             end
           else
-            _request(body, idempotent, parser)
+            _request(body, headers, idempotent, parser)
           end
         end
 
-        def _request(body, idempotent, parser)
+        def _request(body, headers, idempotent, parser)
           @connection.request({
             :body       => body,
             :expects    => 200,
             :idempotent => idempotent,
-            :headers    => { 'Content-Type' => 'application/x-www-form-urlencoded' },
+            :headers    => headers,
             :method     => 'POST',
             :parser     => parser
           })

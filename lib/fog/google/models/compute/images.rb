@@ -12,10 +12,13 @@ module Fog
         # https://developers.google.com/compute/docs/premium-operating-systems
         GLOBAL_PROJECTS = [
           'centos-cloud',
+          'coreos-cloud',
           'debian-cloud',
           'google-containers',
+          'opensuse-cloud',
           'rhel-cloud',
-          'suse-cloud'
+          'suse-cloud',
+          'ubuntu-os-cloud'
         ]
 
         def all
@@ -56,12 +59,13 @@ module Fog
           end
 
           # If it wasn't found in any project, raise
-          if data.nil?
-            raise Fog::Errors::NotFound.new(
-              "Unable to find the image #{identity} in the following projects: #{all_projects.join(', ')}")
-          end
+          return nil if data.nil?
 
           new(data)
+        
+        rescue Fog::Errors::NotFound.new(
+          "Unable to find the image #{identity} in the following projects: #{all_projects.join(', ')}")
+
         end
       end
     end

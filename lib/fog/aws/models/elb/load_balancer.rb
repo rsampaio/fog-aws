@@ -16,6 +16,7 @@ module Fog
         attribute :security_groups,       :aliases => 'SecurityGroups'
         attribute :scheme,                :aliases => 'Scheme'
         attribute :vpc_id,                :aliases => 'VPCId'
+        attribute :tags,                  :aliases => 'tagSet'
 
         def initialize(attributes={})
           if attributes[:subnet_ids] ||= attributes['Subnets']
@@ -58,6 +59,17 @@ module Fog
         def cross_zone_load_balancing= value
           requires :id
           service.modify_load_balancer_attributes(id, 'CrossZoneLoadBalancing' => {'Enabled' => value})
+        end
+
+        def connection_settings_idle_timeout
+          requires :id
+          service.describe_load_balancer_attributes(id).body['DescribeLoadBalancerAttributesResult']['LoadBalancerAttributes']['ConnectionSettings']['IdleTimeout']
+        end
+
+        def set_connection_settings_idle_timeout(timeout=60)
+          requires :id
+          attrs = {'IdleTimeout' => timeout}
+          service.modify_load_balancer_attributes(id,'ConnectionSettings' => attrs)
         end
 
         def register_instances(instances)
@@ -173,6 +185,25 @@ module Fog
           # ELB requests are synchronous
           true
         end
+
+        def tags
+          requires :id
+          service.describe_tags(id).
+            body['DescribeTagsResult']["LoadBalancers"][0]["Tags"]
+
+        end
+        def add_tags(new_tags)
+          requires :id
+          service.add_tags(id, new_tags)
+          tags
+        end
+
+        def remove_tags(tag_keys)
+          requires :id
+          service.remove_tags(id, tag_keys)
+          tags
+        end
+        
 
         def save
           requires :id

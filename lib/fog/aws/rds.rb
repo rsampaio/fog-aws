@@ -10,7 +10,7 @@ module Fog
       class AuthorizationAlreadyExists < Fog::Errors::Error; end
 
       requires :aws_access_key_id, :aws_secret_access_key
-      recognizes :region, :host, :path, :port, :scheme, :persistent, :use_iam_profile, :aws_session_token, :aws_credentials_expire_at, :version
+      recognizes :region, :host, :path, :port, :scheme, :persistent, :use_iam_profile, :aws_session_token, :aws_credentials_expire_at, :version, :instrumentor, :instrumentor_name
 
       request_path 'fog/aws/requests/rds'
       request :describe_events
@@ -59,6 +59,10 @@ module Fog
 
       request :promote_read_replica
 
+      request :describe_event_subscriptions
+      request :create_event_subscription
+      request :delete_event_subscription
+
       model_path 'fog/aws/models/rds'
       model       :server
       collection  :servers
@@ -84,25 +88,32 @@ module Fog
       model       :log_file
       collection  :log_files
 
+      model       :event_subscription
+      collection  :event_subscriptions
+
       class Mock
         def self.data
           @data ||= Hash.new do |hash, region|
             hash[region] = Hash.new do |region_hash, key|
               region_hash[key] = {
-                :servers => {},
-                :security_groups => {},
-                :subnet_groups => {},
-                :snapshots => {},
-                :parameter_groups => {"default.mysql5.1" => { "DBParameterGroupFamily"=>"mysql5.1",
-                                                              "Description"=>"Default parameter group for mysql5.1",
-                                                              "DBParameterGroupName"=>"default.mysql5.1"
-                                                            },
-                                      "default.mysql5.5" => {"DBParameterGroupFamily"=>"mysql5.5",
-                                                            "Description"=>"Default parameter group for mysql5.5",
-                                                            "DBParameterGroupName"=>"default.mysql5.5"
-                                                            }
-                                      }
-                                 }
+                :servers             => {},
+                :security_groups     => {},
+                :subnet_groups       => {},
+                :snapshots           => {},
+                :event_subscriptions => {},
+                :parameter_groups    => {
+                  "default.mysql5.1" => {
+                    "DBParameterGroupFamily" => "mysql5.1",
+                    "Description"            => "Default parameter group for mysql5.1",
+                    "DBParameterGroupName"   => "default.mysql5.1"
+                  },
+                  "default.mysql5.5" => {
+                    "DBParameterGroupFamily" => "mysql5.5",
+                    "Description"            => "Default parameter group for mysql5.5",
+                    "DBParameterGroupName"   => "default.mysql5.5"
+                  }
+                }
+              }
             end
           end
         end
@@ -117,7 +128,7 @@ module Fog
           @use_iam_profile = options[:use_iam_profile]
           @region = options[:region] || 'us-east-1'
 
-          unless ['ap-northeast-1', 'ap-southeast-1', 'ap-southeast-2', 'eu-west-1', 'us-east-1', 'us-west-1', 'us-west-2', 'sa-east-1'].include?(@region)
+          unless ['ap-northeast-1', 'ap-southeast-1', 'ap-southeast-2', 'eu-central-1', 'eu-west-1', 'us-east-1', 'us-west-1', 'us-west-2', 'sa-east-1'].include?(@region)
             raise ArgumentError, "Unknown region: #{@region.inspect}"
           end
         end
@@ -159,7 +170,8 @@ module Fog
         # * ELB object with connection to AWS.
         def initialize(options={})
           @use_iam_profile = options[:use_iam_profile]
-          setup_credentials(options)
+          @instrumentor       = options[:instrumentor]
+          @instrumentor_name  = options[:instrumentor_name] || 'fog.aws.rds'
           @connection_options     = options[:connection_options] || {}
 
           @region     = options[:region]      || 'us-east-1'
@@ -170,6 +182,8 @@ module Fog
           @scheme     = options[:scheme]      || 'https'
           @connection = Fog::XML::Connection.new("#{@scheme}://#{@host}:#{@port}#{@path}", @persistent, @connection_options)
           @version    = options[:version] || '2013-05-15'
+
+          setup_credentials(options)
         end
 
         def owner_id
@@ -188,7 +202,7 @@ module Fog
           @aws_session_token     = options[:aws_session_token]
           @aws_credentials_expire_at = options[:aws_credentials_expire_at]
 
-          @hmac = Fog::HMAC.new('sha256', @aws_secret_access_key)
+          @signer = Fog::AWS::SignatureV4.new( @aws_access_key_id, @aws_secret_access_key,@region,'rds')
         end
 
         def request(params)
@@ -197,49 +211,58 @@ module Fog
           idempotent  = params.delete(:idempotent)
           parser      = params.delete(:parser)
 
-          body = Fog::AWS.signed_params(
+          body, headers = Fog::AWS.signed_params_v4(
             params,
+            {'Content-Type' => 'application/x-www-form-urlencoded' },
             {
-              :aws_access_key_id  => @aws_access_key_id,
               :aws_session_token  => @aws_session_token,
-              :hmac               => @hmac,
+              :signer             => @signer,
               :host               => @host,
               :path               => @path,
               :port               => @port,
-              :version            => @version
+              :version            => @version,
+              :method             => 'POST'
             }
           )
 
-          begin
-            @connection.request({
-              :body       => body,
-              :expects    => 200,
-              :headers    => { 'Content-Type' => 'application/x-www-form-urlencoded' },
-              :idempotent => idempotent,
-              :method     => 'POST',
-              :parser     => parser
-            })
-          rescue Excon::Errors::HTTPStatusError => error
-            match = Fog::AWS::Errors.match_error(error)
-            if match.empty?
-              case error.message
-              when 'Not Found'
-                raise Fog::AWS::RDS::NotFound.slurp(error, 'RDS Instance not found')
-              else
-                raise
-              end
-            else
-              raise case match[:code]
-                    when 'DBInstanceNotFound', 'DBParameterGroupNotFound', 'DBSnapshotNotFound', 'DBSecurityGroupNotFound'
-                      Fog::AWS::RDS::NotFound.slurp(error, match[:message])
-                    when 'DBParameterGroupAlreadyExists'
-                      Fog::AWS::RDS::IdentifierTaken.slurp(error, match[:message])
-                    when 'AuthorizationAlreadyExists'
-                      Fog::AWS::RDS::AuthorizationAlreadyExists.slurp(error, match[:message])
-                    else
-                      Fog::AWS::RDS::Error.slurp(error, "#{match[:code]} => #{match[:message]}")
-                    end
+          if @instrumentor
+            @instrumentor.instrument("#{@instrumentor_name}.request", params) do
+              _request(body, headers, idempotent, parser)
             end
+          else
+            _request(body, headers, idempotent, parser)
+          end
+        end
+
+        def _request(body, headers, idempotent, parser)
+          @connection.request({
+            :body       => body,
+            :expects    => 200,
+            :headers    => headers,
+            :idempotent => idempotent,
+            :method     => 'POST',
+            :parser     => parser
+          })
+        rescue Excon::Errors::HTTPStatusError => error
+          match = Fog::AWS::Errors.match_error(error)
+          if match.empty?
+            case error.message
+            when 'Not Found'
+              raise Fog::AWS::RDS::NotFound.slurp(error, 'RDS Instance not found')
+            else
+              raise
+            end
+          else
+            raise case match[:code]
+                  when 'DBInstanceNotFound', 'DBParameterGroupNotFound', 'DBSnapshotNotFound', 'DBSecurityGroupNotFound', 'SubscriptionNotFound'
+                    Fog::AWS::RDS::NotFound.slurp(error, match[:message])
+                  when 'DBParameterGroupAlreadyExists'
+                    Fog::AWS::RDS::IdentifierTaken.slurp(error, match[:message])
+                  when 'AuthorizationAlreadyExists'
+                    Fog::AWS::RDS::AuthorizationAlreadyExists.slurp(error, match[:message])
+                  else
+                    Fog::AWS::RDS::Error.slurp(error, "#{match[:code]} => #{match[:message]}")
+                  end
           end
         end
       end

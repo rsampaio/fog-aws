@@ -66,6 +66,10 @@ Shindo.tests('Fog::Storage[:aws] | bucket requests', ["aws"]) do
       Fog::Storage[:aws].get_bucket(@aws_bucket_name).body
     end
 
+    tests("#head_bucket('#{@aws_bucket_name}')").succeeds do
+      Fog::Storage[:aws].head_bucket(@aws_bucket_name)
+    end
+
     file.destroy
 
     file1 = Fog::Storage[:aws].directories.get(@aws_bucket_name).files.create(:body => 'a',    :key => 'a/a1/file1')
@@ -133,8 +137,17 @@ Shindo.tests('Fog::Storage[:aws] | bucket requests', ["aws"]) do
       Fog::Storage[:aws].put_request_payment(@aws_bucket_name, 'Requester')
     end
 
+    # This should show a warning, but work (second parameter is options hash for now)
     tests("#put_bucket_website('#{@aws_bucket_name}', 'index.html')").succeeds do
       Fog::Storage[:aws].put_bucket_website(@aws_bucket_name, 'index.html')
+    end
+
+    tests("#put_bucket_website('#{@aws_bucket_name}', :IndexDocument => 'index.html')").succeeds do
+      Fog::Storage[:aws].put_bucket_website(@aws_bucket_name, :IndexDocument => 'index.html')
+    end
+
+    tests("#put_bucket_website('#{@aws_bucket_name}', :RedirectAllRequestsTo => 'redirect.example..com')").succeeds do
+      Fog::Storage[:aws].put_bucket_website(@aws_bucket_name, :RedirectAllRequestsTo => 'redirect.example.com')
     end
 
     tests("#put_bucket_acl('#{@aws_bucket_name}', 'private')").succeeds do
@@ -354,6 +367,11 @@ Shindo.tests('Fog::Storage[:aws] | bucket requests', ["aws"]) do
         storage_eu_endpoint.put_bucket(@aws_bucket_name)
       end
     end
+
+    tests("#put_bucket_website('fognonbucket', :RedirectAllRequestsTo => 'redirect.example.com')").raises(Excon::Errors::NotFound) do
+      Fog::Storage[:aws].put_bucket_website('fognonbucket', :RedirectAllRequestsTo => 'redirect.example.com')
+    end
+
   end
 
   # don't keep the bucket around

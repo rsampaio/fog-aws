@@ -9,6 +9,7 @@ module Fog
         attribute :associate_public_ip,   :aliases => 'AssociatePublicIpAddress'
         attribute :block_device_mappings, :aliases => 'BlockDeviceMappings'
         attribute :created_at,            :aliases => 'CreatedTime'
+        attribute :ebs_optimized,         :aliases => 'EbsOptimized'
         attribute :iam_instance_profile,  :aliases => 'IamInstanceProfile'
         attribute :image_id,              :aliases => 'ImageId'
         #attribute :instance_monitoring,   :aliases => 'InstanceMonitoring'
@@ -20,6 +21,7 @@ module Fog
         attribute :security_groups,       :aliases => 'SecurityGroups'
         attribute :user_data,             :aliases => 'UserData'
         attribute :spot_price,            :aliases => 'SpotPrice'
+        attribute :placement_tenancy,     :aliases => 'PlacementTenancy'
 
 
         def initialize(attributes={})

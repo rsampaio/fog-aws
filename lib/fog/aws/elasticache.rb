@@ -10,7 +10,7 @@ module Fog
       class AuthorizationAlreadyExists < Fog::Errors::Error; end
 
       requires :aws_access_key_id, :aws_secret_access_key
-      recognizes :region, :host, :path, :port, :scheme, :persistent, :use_iam_profile, :aws_session_token, :aws_credentials_expire_at
+      recognizes :region, :host, :path, :port, :scheme, :persistent, :use_iam_profile, :aws_session_token, :aws_credentials_expire_at, :instrumentor, :instrumentor_name
 
       request_path 'fog/aws/requests/elasticache'
 
@@ -55,9 +55,12 @@ module Fog
         include Fog::AWS::CredentialFetcher::ConnectionMethods
         def initialize(options={})
           @use_iam_profile = options[:use_iam_profile]
-          setup_credentials(options)
 
+          @instrumentor       = options[:instrumentor]
+          @instrumentor_name  = options[:instrumentor_name] || 'fog.aws.elasticache'
           options[:region] ||= 'us-east-1'
+
+          @region = options[:region]
           @host = options[:host] || "elasticache.#{options[:region]}.amazonaws.com"
           @path       = options[:path]      || '/'
           @port       = options[:port]      || 443
@@ -65,6 +68,8 @@ module Fog
           @connection = Fog::XML::Connection.new(
             "#{@scheme}://#{@host}:#{@port}#{@path}", options[:persistent]
           )
+
+          setup_credentials(options)
         end
 
         def reload
@@ -79,7 +84,7 @@ module Fog
           @aws_session_token      = options[:aws_session_token]
           @aws_credentials_expire_at = options[:aws_credentials_expire_at]
 
-          @hmac = Fog::HMAC.new('sha256', @aws_secret_access_key)
+          @signer = Fog::AWS::SignatureV4.new( @aws_access_key_id, @aws_secret_access_key, @region, 'elasticache')
         end
 
         def request(params)
@@ -88,12 +93,13 @@ module Fog
           idempotent  = params.delete(:idempotent)
           parser      = params.delete(:parser)
 
-          body = Fog::AWS.signed_params(
+          body, headers = Fog::AWS.signed_params_v4(
             params,
+            { 'Content-Type' => 'application/x-www-form-urlencoded' },
             {
-            :aws_access_key_id  => @aws_access_key_id,
+            :signer             => @signer,
             :aws_session_token  => @aws_session_token,
-            :hmac               => @hmac,
+            :method             => 'POST',
             :host               => @host,
             :path               => @path,
             :port               => @port,
@@ -101,29 +107,37 @@ module Fog
           }
           )
 
-          begin
-            @connection.request({
-              :body       => body,
-              :expects    => 200,
-              :headers    => { 'Content-Type' => 'application/x-www-form-urlencoded' },
-              :idempotent => idempotent,
-              :method     => 'POST',
-              :parser     => parser
-            })
-          rescue Excon::Errors::HTTPStatusError => error
-            match = Fog::AWS::Errors.match_error(error)
-            raise if match.empty?
-            raise case match[:code]
-                  when 'CacheSecurityGroupNotFound', 'CacheParameterGroupNotFound', 'CacheClusterNotFound'
-                    Fog::AWS::Elasticache::NotFound.slurp(error, match[:message])
-                  when 'CacheSecurityGroupAlreadyExists'
-                    Fog::AWS::Elasticache::IdentifierTaken.slurp(error, match[:message])
-                  when 'InvalidParameterValue'
-                    Fog::AWS::Elasticache::InvalidInstance.slurp(error, match[:message])
-                  else
-                    Fog::AWS::Elasticache::Error.slurp(error, "#{match[:code]} => #{match[:message]}")
-                  end
+          if @instrumentor
+            @instrumentor.instrument("#{@instrumentor_name}.request", params) do
+              _request(body, headers, idempotent, parser)
+            end
+          else
+            _request(body, headers, idempotent, parser)
           end
+        end
+
+        def _request(body, headers, idempotent, parser)
+          @connection.request({
+            :body       => body,
+            :expects    => 200,
+            :headers    => headers, 
+            :idempotent => idempotent,
+            :method     => 'POST',
+            :parser     => parser
+          })
+        rescue Excon::Errors::HTTPStatusError => error
+          match = Fog::AWS::Errors.match_error(error)
+          raise if match.empty?
+          raise case match[:code]
+                when 'CacheSecurityGroupNotFound', 'CacheParameterGroupNotFound', 'CacheClusterNotFound'
+                  Fog::AWS::Elasticache::NotFound.slurp(error, match[:message])
+                when 'CacheSecurityGroupAlreadyExists'
+                  Fog::AWS::Elasticache::IdentifierTaken.slurp(error, match[:message])
+                when 'InvalidParameterValue'
+                  Fog::AWS::Elasticache::InvalidInstance.slurp(error, match[:message])
+                else
+                  Fog::AWS::Elasticache::Error.slurp(error, "#{match[:code]} => #{match[:message]}")
+                end
         end
       end
 

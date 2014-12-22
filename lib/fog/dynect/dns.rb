@@ -4,7 +4,7 @@ module Fog
   module DNS
     class Dynect < Fog::Service
       requires :dynect_customer, :dynect_username, :dynect_password
-      recognizes :timeout, :persistent
+      recognizes :timeout, :persistent, :job_poll_timeout
       recognizes :provider # remove post deprecation
 
       model_path 'fog/dynect/models/dns'
@@ -65,12 +65,13 @@ module Fog
           @dynect_password = options[:dynect_password]
 
           @connection_options = options[:connection_options] || {}
-          @host       = 'api-v4.dynect.net'
-          @port       = options[:port]        || 443
-          @path       = options[:path]        || '/REST'
-          @persistent = options[:persistent]  || false
-          @scheme     = options[:scheme]      || 'https'
-          @version    = options[:version]     || '3.5.2'
+          @host               = 'api-v4.dynect.net'
+          @port               = options[:port]             || 443
+          @path               = options[:path]             || '/REST'
+          @persistent         = options[:persistent]       || false
+          @scheme             = options[:scheme]           || 'https'
+          @version            = options[:version]          || '3.5.2'
+          @job_poll_timeout   = options[:job_poll_timeout] || 10
           @connection = Fog::XML::Connection.new("#{@scheme}://#{@host}:#{@port}", @persistent, @connection_options)
         end
 
@@ -101,8 +102,16 @@ module Fog
               raise Error, response.body['msgs'].first['INFO']
             end
 
-            if response.status == 307 && params[:path] !~ %r{^/REST/Job/}
-              response = poll_job(response, params[:expects])
+            if params[:path] !~ %r{^/REST/Job/}
+              if response.status == 307
+                response = poll_job(response, params[:expects], @job_poll_timeout)
+
+              # Dynect intermittently returns 200 with an incomplete status.  When this
+              # happens, the job should still be polled.
+              elsif response.status == 200 && response.body['status'].eql?('incomplete')
+                response.headers['Location'] = "/REST/Job/#{ response.body['job_id'] }"
+                response = poll_job(response, params[:expects], @job_poll_timeout)
+              end
             end
 
             response
@@ -118,9 +127,9 @@ module Fog
           response
         end
 
-        def poll_job(response, original_expects, time_to_wait = 10)
+        def poll_job(response, original_expects, time_to_wait)
           job_location = response.headers['Location']
-          
+
           begin
             Fog.wait_for(time_to_wait) do
              response = request(
@@ -131,7 +140,7 @@ module Fog
              )
              response.body['status'] != 'incomplete'
             end
-          
+
           rescue Errors::TimeoutError => error
             if response.body['status'] == 'incomplete'
               raise JobIncomplete.new("Job #{response.body['job_id']} is still incomplete")

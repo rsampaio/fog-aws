@@ -8,11 +8,14 @@ module Fog
         #
         # ==== Parameters
         # * filters<~Hash> - List of filters to limit results with
-        #
+        #   * Also allows for passing of optional parameters to fetch instances in batches:
+        #     * 'maxResults' - The number of instances to return for the request
+        #     * 'nextToken' - The token to fetch the next set of items. This is returned by a previous request.
         # ==== Returns
         # * response<~Excon::Response>:
         #   * body<~Hash>:
         #     * 'requestId'<~String> - Id of request
+        #     * 'nextToken' - The token to use when requesting the next set of items when fetching items in batches.
         #     * 'reservationSet'<~Array>:
         #       * 'groupSet'<~Array> - Group names for reservation
         #       * 'ownerId'<~String> - AWS Access Key ID of reservation owner
@@ -59,6 +62,10 @@ module Fog
             filters = {'instance-id' => [*filters]}
           end
           params = {}
+
+          next_token  = filters.delete('nextToken') || filters.delete('NextToken')
+          max_results = filters.delete('maxResults') || filters.delete('MaxResults')
+
           if filters['instance-id']
             instance_ids = filters.delete('instance-id')
             instance_ids = [instance_ids] unless instance_ids.is_a?(Array)
@@ -66,6 +73,9 @@ module Fog
               params.merge!("InstanceId.#{index}" => id)
             end
           end
+
+          params['NextToken']  = next_token if next_token
+          params['MaxResults'] = max_results if max_results
           params.merge!(Fog::AWS.indexed_filters(filters))
 
           request({
@@ -146,6 +156,9 @@ module Fog
             elsif state_reason_key = filter_key.split('state-reason-')[1]
               aliased_key = state_reason_aliases[state_reason_key]
               instance_set = instance_set.reject{|instance| ![*filter_value].include?(instance['stateReason'][aliased_key])}
+            elsif filter_key == "availability-zone"
+              aliased_key = aliases[filter_key]
+              instance_set = instance_set.reject{|instance| ![*filter_value].include?(instance['placement'][aliased_key])}
             elsif filter_key == "group-name"
               instance_set = instance_set.reject {|instance| !instance['groupSet'].include?(filter_value)}
             elsif filter_key == "group-id"

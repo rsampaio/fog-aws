@@ -11,6 +11,7 @@ module Fog
         attribute :ip_permissions_egress,  :aliases => 'ipPermissionsEgress'
         attribute :owner_id,        :aliases => 'ownerId'
         attribute :vpc_id,          :aliases => 'vpcId'
+        attribute :tags,            :aliases => 'tagSet'
 
         # Authorize access by another security group
         #
@@ -220,6 +221,36 @@ module Fog
           )
         end
 
+        # Reload a security group
+        #
+        #  >> g = AWS.security_groups.get(:name => "some_name")
+        #  >> g.reload
+        #
+        #  == Returns:
+        #
+        #  Up to date model or an exception
+
+        def reload
+          if group_id.nil?
+            super
+            service.delete_security_group(name)
+          else
+            requires :group_id
+
+            data = begin
+              collection.get_by_id(group_id)
+            rescue Excon::Errors::SocketError
+              nil
+            end
+
+            return unless data
+
+            merge_attributes(data.attributes)
+            self
+          end
+        end
+
+
         # Create a security group
         #
         #  >> g = AWS.security_groups.new(:name => "some_name", :description => "something")
@@ -236,6 +267,16 @@ module Fog
           data = service.create_security_group(name, description, vpc_id).body
           new_attributes = data.reject {|key,value| key == 'requestId'}
           merge_attributes(new_attributes)
+
+          if tags = self.tags
+            # expect eventual consistency
+            Fog.wait_for { self.reload rescue nil }
+            service.create_tags(
+              self.group_id,
+              tags
+            )
+          end
+
           true
         end
 

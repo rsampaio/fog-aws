@@ -18,6 +18,7 @@ module Fog
 
           add_commits_to_changelog
           save_changelog
+          ::Rake::Task[:github_release].invoke
         end
       end
 
@@ -104,15 +105,18 @@ Watchers      | #{watchers}
       def former_mvp?(committer)
          [
            'Aaron Suggs',
+           'ller', #"Achim Ledermüller" UTF-8 fail?
            'Ash Wilson',
            'Benson Kalahar',
            'Brian Hartsock',
            'Chris Roberts',
            'Christopher Oliver',
+           'Colin Hebert',
            'Daniel Reichert',
            'Decklin Foster',
            'Dylan Egan',
            'Erik Michaels-Ober',
+           'Frederick Cheung',
            'geemus',
            'Henry Addison',
            'James Bence',
@@ -121,6 +125,7 @@ Watchers      | #{watchers}
            'Kyle Rames',
            'Lincoln Stoll',
            'Luqman Amjad',
+           'Michael Hale',
            'Michael Zeng',
            'Mike Hagedorn',
            'Mike Pountney',

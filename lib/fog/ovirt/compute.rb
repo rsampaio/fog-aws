@@ -24,6 +24,7 @@ module Fog
       request_path 'fog/ovirt/requests/compute'
 
       request :vm_action
+      request :vm_start_with_cloudinit
       request :destroy_vm
       request :create_vm
       request :update_vm
@@ -46,6 +47,7 @@ module Fog
       request :list_template_volumes
       request :add_volume
       request :destroy_volume
+      request :update_volume
       request :get_api_version
       request :list_quotas
       request :get_quota

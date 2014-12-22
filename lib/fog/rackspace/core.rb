@@ -97,6 +97,9 @@ module Fog
     service(:databases,        'Databases')
     service(:monitoring,       'Monitoring')
     service(:queues,           'Queues')
+    service(:networking,       'Networking')
+    service(:orchestration,    'Orchestration')
+    service(:networkingV2,     'NetworkingV2')
 
     def self.authenticate(options, connection_options = {})
       rackspace_auth_url = options[:rackspace_auth_url]

@@ -1,5 +1,7 @@
 language: ruby
 
+sudo: false
+
 script: bundle exec rake travis
 
 matrix:
@@ -39,6 +41,3 @@ notifications:
     on_success: always
     on_failure: always
     use_notice: false
-
-before_install:
-  - gem update --system #  todo: workaround for https://github.com/rubygems/rubygems/pull/763

@@ -146,6 +146,8 @@ module Fog
 
                              default_sg
                            end
+          self.data[:tags] ||= {}
+          self.data[:tags][lb_name] = {}
 
           self.data[:load_balancers][lb_name] = {
             'AvailabilityZones' => availability_zones,
@@ -172,7 +174,8 @@ module Fog
             'ListenerDescriptions' => listeners,
             'LoadBalancerAttributes' => {
               'ConnectionDraining' => {'Enabled' => false, 'Timeout' => 300},
-              'CrossZoneLoadBalancing' => {'Enabled' => false}
+              'CrossZoneLoadBalancing' => {'Enabled' => false},
+              'ConnectionSettings' => {'IdleTimeout' => 60}
             },
             'LoadBalancerName' => lb_name,
             'Policies' => {

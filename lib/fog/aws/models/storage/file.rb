@@ -29,6 +29,11 @@ module Fog
         #     Use small chunk sizes to minimize memory. E.g. 5242880 = 5mb
         attr_accessor :multipart_chunk_size
 
+        def acl
+          requires :directory, :key
+          service.get_object_acl(directory.key, key).body['AccessControlList']
+        end
+
         # Set file's access control list (ACL).
         #
         #     valid acls: private, public-read, public-read-write, authenticated-read, bucket-owner-read, bucket-owner-full-control
@@ -118,10 +123,14 @@ module Fog
         def owner=(new_owner)
           if new_owner
             attributes[:owner] = {
-              :display_name => new_owner['DisplayName'],
-              :id           => new_owner['ID']
+              :display_name => new_owner['DisplayName'] || new_owner[:display_name],
+              :id           => new_owner['ID'] || new_owner[:id]
             }
           end
+        end
+
+        def public?
+          acl.any? {|grant| grant['Grantee']['URI'] == 'http://acs.amazonaws.com/groups/global/AllUsers' && grant['Permission'] == 'READ'}
         end
 
         # Set Access-Control-List permissions.
@@ -140,8 +149,8 @@ module Fog
           new_public
         end
 
-        # Get pubically acessible url via http GET.
-        # Checks persmissions before creating.
+        # Get publicly accessible url via http GET.
+        # Checks permissions before creating.
         # Defaults to s3 subdomain or compliant bucket name
         #
         #     required attributes: directory, key
@@ -150,7 +159,7 @@ module Fog
         #
         def public_url
           requires :directory, :key
-          if service.get_object_acl(directory.key, key).body['AccessControlList'].find {|grant| grant['Grantee']['URI'] == 'http://acs.amazonaws.com/groups/global/AllUsers' && grant['Permission'] == 'READ'}
+          if public?
             service.request_url(
               :bucket_name => directory.key,
               :object_name => key
@@ -248,7 +257,9 @@ module Fog
           # TODO: optionally upload chunks in parallel using threads
           # (may cause network performance problems with many small chunks)
           # TODO: Support large chunk sizes without reading the chunk into memory
-          body.rewind if body.respond_to?(:rewind)
+          if body.respond_to?(:rewind)
+            body.rewind  rescue nil
+          end
           while (chunk = body.read(multipart_chunk_size)) do
             md5 = Base64.encode64(Digest::MD5.digest(chunk)).strip
             part_upload = service.upload_part(directory.key, key, upload_id, part_tags.size + 1, chunk, 'Content-MD5' => md5 )

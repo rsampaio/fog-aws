@@ -6,7 +6,7 @@ module Fog
       extend Fog::AWS::CredentialFetcher::ServiceMethods
 
       requires :aws_access_key_id, :aws_secret_access_key
-      recognizes :host, :path, :port, :scheme, :persistent, :region, :use_iam_profile, :aws_session_token, :aws_credentials_expire_at
+      recognizes :host, :path, :port, :scheme, :persistent, :region, :use_iam_profile, :aws_session_token, :aws_credentials_expire_at, :instrumentor, :instrumentor_name
 
       request_path 'fog/aws/requests/sns'
       request :add_permission
@@ -23,8 +23,38 @@ module Fog
       request :subscribe
       request :unsubscribe
 
+      model_path 'fog/aws/models/sns'
+      model :topic
+      collection :topics
+
       class Mock
+        def self.data
+          @data ||= Hash.new do |hash, region|
+            hash[region] = Hash.new do |region_hash, key|
+              region_hash[key] = {
+                :topics => {},
+              }
+            end
+          end
+        end
+
         def initialize(options={})
+          @region            = options[:region] || 'us-east-1'
+          @aws_access_key_id = options[:aws_access_key_id]
+          @account_id        = "12345678910"
+          @module            = "sns"
+
+          unless ['ap-northeast-1', 'ap-southeast-1', 'ap-southeast-2', 'eu-central-1', 'eu-west-1', 'us-east-1', 'us-west-1', 'us-west-2', 'sa-east-1'].include?(@region)
+            raise ArgumentError, "Unknown region: #{@region.inspect}"
+          end
+        end
+
+        def data
+          self.class.data[@region][@aws_access_key_id]
+        end
+
+        def reset_data
+          self.class.data[@region].delete(@aws_access_key_id)
         end
       end
 
@@ -49,10 +79,12 @@ module Fog
         # * SNS object with connection to AWS.
         def initialize(options={})
           @use_iam_profile = options[:use_iam_profile]
-          setup_credentials(options)
           @connection_options     = options[:connection_options] || {}
+          @instrumentor       = options[:instrumentor]
+          @instrumentor_name  = options[:instrumentor_name] || 'fog.aws.sns'
 
           options[:region] ||= 'us-east-1'
+          @region = options[:region]
           @host = options[:host] || "sns.#{options[:region]}.amazonaws.com"
 
           @path       = options[:path]        || '/'
@@ -60,6 +92,8 @@ module Fog
           @port       = options[:port]        || 443
           @scheme     = options[:scheme]      || 'https'
           @connection = Fog::XML::Connection.new("#{@scheme}://#{@host}:#{@port}#{@path}", @persistent, @connection_options)
+
+          setup_credentials(options)
         end
 
         def reload
@@ -74,7 +108,7 @@ module Fog
           @aws_session_token     = options[:aws_session_token]
           @aws_credentials_expire_at = options[:aws_credentials_expire_at]
 
-          @hmac       = Fog::HMAC.new('sha256', @aws_secret_access_key)
+          @signer = Fog::AWS::SignatureV4.new( @aws_access_key_id, @aws_secret_access_key, @region, 'sns')
         end
 
         def request(params)
@@ -83,28 +117,37 @@ module Fog
           idempotent  = params.delete(:idempotent)
           parser      = params.delete(:parser)
 
-          body = AWS.signed_params(
+          body, headers = AWS.signed_params_v4(
             params,
+            { 'Content-Type' => 'application/x-www-form-urlencoded' },
             {
-              :aws_access_key_id  => @aws_access_key_id,
+              :method             => 'POST',
               :aws_session_token  => @aws_session_token,
-              :hmac               => @hmac,
+              :signer             => @signer,
               :host               => @host,
               :path               => @path,
               :port               => @port
             }
           )
 
-          response = @connection.request({
+          if @instrumentor
+            @instrumentor.instrument("#{@instrumentor_name}.request", params) do
+              _request(body, headers, idempotent, parser)
+            end
+          else
+            _request(body, headers, idempotent, parser)
+          end
+        end
+
+        def _request(body, headers, idempotent, parser)
+          @connection.request({
             :body       => body,
             :expects    => 200,
             :idempotent => idempotent,
-            :headers    => { 'Content-Type' => 'application/x-www-form-urlencoded' },
+            :headers    => headers,
             :method     => 'POST',
             :parser     => parser
           })
-
-          response
         end
       end
     end
