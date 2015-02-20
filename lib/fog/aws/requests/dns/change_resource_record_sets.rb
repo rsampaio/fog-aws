@@ -193,7 +193,7 @@ module Fog
                   errors << "Tried to create resource record set #{change[:name]}. type #{change[:type]}, but it already exists"
                 end
               when "DELETE"
-                if zone[:records][change[:type]].nil? || zone[:records][change[:type]].delete(change[:name]).nil?
+                if zone[:records][change[:type]].nil? || zone[:records][change[:type]].delete(change_name).nil?
                   errors << "Tried to delete resource record set #{change[:name]}. type #{change[:type]}, but it was not found"
                 end
               end
@@ -213,7 +213,7 @@ module Fog
               }
               response
             else
-              raise Fog::DNS::AWS::Error.new("InvalidChangeBatch => #{errors.map {|e| "<Message>#{e}</Message>"}.join()}")
+              raise Fog::DNS::AWS::Error.new("InvalidChangeBatch => #{errors.join(", ")}")
             end
           else
             raise Fog::DNS::AWS::NotFound.new("NoSuchHostedZone => A hosted zone with the specified hosted zone ID does not exist.")

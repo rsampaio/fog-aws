@@ -143,13 +143,9 @@ module Fog
           @connection.request(params, &block)
         rescue Excon::Errors::HTTPStatusError => error
           match = Fog::AWS::Errors.match_error(error)
+
           if match.empty?
-            case error.message
-            when 'Not Found'
-              raise Fog::DNS::AWS::NotFound.slurp(error, 'RDS Instance not found')
-            else
-              raise
-            end
+            raise
           else
             case match[:code]
             when 'NoSuchHostedZone' then

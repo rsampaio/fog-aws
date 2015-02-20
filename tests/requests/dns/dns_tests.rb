@@ -119,11 +119,12 @@ Shindo.tests('Fog::DNS[:aws] | DNS requests', ['aws', 'dns']) do
       change_batch << resource_record_set
       options = { :comment => 'add A record to domain'}
       response = @r53_connection.change_resource_record_sets(@zone_id, change_batch, options)
-      if response.status == 200
-        @new_records << resource_record
-      end
 
-      response.status == 200
+      Fog.wait_for { @r53_connection.get_change(response.body["Id"]).body["Status"] != "PENDING" }
+
+      @new_records << resource_record
+
+      @r53_connection.get_change(response.body["Id"]).body["Status"] == "INSYNC"
     }
 
     test("add a CNAME resource record") {
@@ -137,11 +138,12 @@ Shindo.tests('Fog::DNS[:aws] | DNS requests', ['aws', 'dns']) do
       change_batch << resource_record_set
       options = { :comment => 'add CNAME record to domain'}
       response = @r53_connection.change_resource_record_sets( @zone_id, change_batch, options)
-      if response.status == 200
-        @new_records << resource_record
-      end
 
-      response.status == 200
+      Fog.wait_for { @r53_connection.get_change(response.body["Id"]).body["Status"] != "PENDING" }
+
+      @new_records << resource_record
+
+      @r53_connection.get_change(response.body["Id"]).body["Status"] == "INSYNC"
     }
 
     test("add a MX resource record") {
@@ -155,11 +157,12 @@ Shindo.tests('Fog::DNS[:aws] | DNS requests', ['aws', 'dns']) do
       change_batch << resource_record_set
       options = { :comment => 'add MX record to domain'}
       response = @r53_connection.change_resource_record_sets( @zone_id, change_batch, options)
-      if response.status == 200
-        @new_records << resource_record
-      end
 
-      response.status == 200
+      Fog.wait_for { @r53_connection.get_change(response.body["Id"]).body["Status"] != "PENDING" }
+
+      @new_records << resource_record
+
+      @r53_connection.get_change(response.body["Id"]).body["Status"] == "INSYNC"
     }
 
     test("add an ALIAS resource record") {
@@ -189,15 +192,13 @@ Shindo.tests('Fog::DNS[:aws] | DNS requests', ['aws', 'dns']) do
       puts "DNS Name (ELB): #{dns_name}"
       puts "Zone ID for Route 53: #{@zone_id}"
 
-
       response = @r53_connection.change_resource_record_sets(@zone_id, change_batch, options)
 
-      if response.status == 200
-        Fog.wait_for(120, 5) { @r53_connection.get_change(response.body["Id"])["Status"] != "PENDING" }
-        @new_records << resource_record
-      end
+      Fog.wait_for { @r53_connection.get_change(response.body["Id"]).body["Status"] != "PENDING" }
 
-      response.status == 200
+      @new_records << resource_record
+
+      @r53_connection.get_change(response.body["Id"]).body["Status"] == "INSYNC"
     }
 
 
@@ -207,25 +208,21 @@ Shindo.tests('Fog::DNS[:aws] | DNS requests', ['aws', 'dns']) do
     }
 
     test("delete #{@new_records.count} resource records") {
-      change_batch = @new_records.map { |record|
-        record.merge(:action => 'DELETE')
-      }
-      options = { :comment => 'remove records from domain'}
+      change_batch = @new_records.map { |record| record.merge(:action => 'DELETE') }
+      options      = { :comment => 'remove records from domain'}
+
       response = @r53_connection.change_resource_record_sets(@zone_id, change_batch, options)
 
-      if response.status == 200
-        Fog.wait_for(120, 5) { @r53_connection.get_change(response.body["Id"])["Status"] != "PENDING" }
-        true
-      end
+      Fog.wait_for { @r53_connection.get_change(response.body["Id"]).body["Status"] != "PENDING" }
+
+      @r53_connection.get_change(response.body["Id"]).body["Status"] == "INSYNC"
     }
 
     test("delete hosted zone #{@zone_id}") {
       # cleanup the ELB as well
       @elb_connection.delete_load_balancer("fog")
 
-      response = @r53_connection.delete_hosted_zone(@zone_id)
-
-      response.status == 200
+      @r53_connection.delete_hosted_zone(@zone_id).status == 200
     }
 
   end
