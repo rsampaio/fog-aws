@@ -30,6 +30,10 @@ module Fog
         #   * OriginAccessIdentity [String] Used for serving private content, in format 'origin-access-identity/cloudfront/ID'.
         #   * RequiredProtocols [String] Optional, set to 'https' to force https connections.
         #   * TrustedSigners [Array] Optional grant of rights to up to 5 aws accounts to generate signed URLs for private content, elements are either 'Self' for your own account or an AWS Account Number.
+        #   * ViewerCertificates [Hash]:
+        #     * SSLSupportMethod [String] - SSL Method to support vip or sni-only
+        #     * MinimumProtocolVersion [String] - Protocol version TLSv1 or SSLv3
+        #     * IAMCertificateId [String] - IAM Certificate ID to use in this distribution
         #
         # @return [Excon::Response]
         #   * body [Hash]:
@@ -47,13 +51,48 @@ module Fog
         #         * Prefix [String] - Prefix logs are stored with.
         #       * Origin [String] - S3 origin bucket.
         #       * TrustedSigners [Array] - Trusted signers.
+        #       * DefaultCacheBehavior [Hash]:
+        #         * ForwardedValues [Hash]: - Forward Values to distribution destination
+        #           * Headers [Hash]:
+        #             * Items[Array] - List of Headers to forward
+        #           * Cookies [Hash]:
+        #             * Forward [Boolean] - Enable cookie forward to the destination
+        #           * QueryString [Boolean] - Forward query string to the destination
+        #       * ViewerCertificates [Hash]:
+        #         * SSLSupportMethod [String] - SSL Method to support vip or sni-only
+        #         * MinimumProtocolVersion [String] - Protocol version TLSv1 or SSLv3
+        #         * IAMCertificateId [String] - IAM Certificate ID to use in this distribution
         #
         # @see http://docs.amazonwebservices.com/AmazonCloudFront/latest/APIReference/CreateDistribution.html
 
         def post_distribution(options = {})
+          default_cache_behavior = options.delete('DefaultCacheBehavior')
+          viewer_certificate = options.delete('ViewerCertificate')
+          allowed_methods = options.delete('AllowedMethods')
+
           options['CallerReference'] = Time.now.to_i.to_s
           data = '<?xml version="1.0" encoding="UTF-8"?>'
           data << "<DistributionConfig xmlns=\"http://cloudfront.amazonaws.com/doc/#{@version}/\">"
+          data << ruby_to_xml(options)
+          data << ruby_to_xml(default_cache_behavior) if not default_cache_behavior.nil?
+          data << ruby_to_xml(viewer_certificate) if not viewer_certificate.nil?
+          data << ruby_to_xml(allowed_methods) if not allowed_methods.nil?
+          data << "</DistributionConfig>"
+          puts data; return
+          request({
+            :body       => data,
+            :expects    => 201,
+            :headers    => { 'Content-Type' => 'text/xml' },
+            :idempotent => true,
+            :method     => 'POST',
+            :parser     => Fog::Parsers::CDN::AWS::Distribution.new,
+            :path       => "/distribution"
+          })
+        end
+
+        # Helper function to parse multiple levels of XML
+        def ruby_to_xml(options = {})
+          data = ''
           for key, value in options
             case value
             when Array
@@ -70,17 +109,9 @@ module Fog
               data << "<#{key}>#{value}</#{key}>"
             end
           end
-          data << "</DistributionConfig>"
-          request({
-            :body       => data,
-            :expects    => 201,
-            :headers    => { 'Content-Type' => 'text/xml' },
-            :idempotent => true,
-            :method     => 'POST',
-            :parser     => Fog::Parsers::CDN::AWS::Distribution.new,
-            :path       => "/distribution"
-          })
+          data
         end
+
       end
 
       class Mock
@@ -115,7 +146,10 @@ module Fog
               },
               'S3Origin' => options['S3Origin'],
               'CustomOrigin' => options['CustomOrigin'],
-              'TrustedSigners' => options['TrustedSigners'] || []
+              'TrustedSigners' => options['TrustedSigners'] || [],
+              'DefaultCacheBehavior' => options['DefaultCacheBehavior'],
+              'ViewerCertificate' => options['ViewerCertificate'],
+              'AllowedMethods' => options['AllowedMethods']
             }
           }
 

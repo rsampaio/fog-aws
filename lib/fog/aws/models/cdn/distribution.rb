@@ -9,23 +9,27 @@ module Fog
 
         identity :id,                 :aliases => 'Id'
 
-        attribute :caller_reference,   :aliases => 'CallerReference'
-        attribute :last_modified_time, :aliases => 'LastModifiedTime'
-        attribute :status,             :aliases => 'Status'
-        attribute :s3_origin,          :aliases => 'S3Origin'
-        attribute :custom_origin,      :aliases => 'CustomOrigin'
-        attribute :cname,              :aliases => 'CNAME'
-        attribute :comment,            :aliases => 'Comment'
-        attribute :enabled,            :aliases => 'Enabled'
+        attribute :caller_reference,                 :aliases => 'CallerReference'
+        attribute :last_modified_time,               :aliases => 'LastModifiedTime'
+        attribute :status,                           :aliases => 'Status'
+        attribute :s3_origin,                        :aliases => 'S3Origin'
+        attribute :custom_origin,                    :aliases => 'CustomOrigin'
+        attribute :cname,                            :aliases => 'CNAME'
+        attribute :comment,                          :aliases => 'Comment'
+        attribute :enabled,                          :aliases => 'Enabled'
         attribute :in_progress_invalidation_batches, :aliases => 'InProgressInvalidationBatches'
-        attribute :logging,            :aliases => 'Logging'
-        attribute :trusted_signers,    :aliases => 'TrustedSigners'
-        attribute :default_root_object,:aliases => 'DefaultRootObject'
-        attribute :domain,             :aliases => 'DomainName'
-        attribute :etag,               :aliases => ['Etag', 'ETag']
+        attribute :logging,                          :aliases => 'Logging'
+        attribute :trusted_signers,                  :aliases => 'TrustedSigners'
+        attribute :default_root_object,              :aliases => 'DefaultRootObject'
+        attribute :domain,                           :aliases => 'DomainName'
+        attribute :etag,                             :aliases => ['Etag', 'ETag']
+        attribute :default_cache_behavior,           :aliases => 'DefaultCacheBehavior'
+        attribute :viewer_certificate,               :aliases => 'ViewerCertificate'
+        attribute :allowed_methods,                  :aliases => 'AllowedMethods'
+
 
         # items part of DistributionConfig
-        CONFIG = [ :caller_reference, :origin,  :cname, :comment, :enabled, :logging, :trusted_signers, :default_root_object ]
+        CONFIG = [ :caller_reference, :origin, :cname, :comment, :enabled, :logging, :trusted_signers, :default_root_object, :default_cache_behavior, :viewer_certificate, :allowed_methods ]
 
         def initialize(new_attributes = {})
           super(distribution_config_to_attributes(new_attributes))
@@ -73,7 +77,8 @@ module Fog
             'Enabled' => enabled,
             'Logging' => logging,
             'TrustedSigners' => trusted_signers,
-            'DefaultRootObject' => default_root_object
+            'DefaultRootObject' => default_root_object,
+            'DefaultCacheBehavior' => default_cache_behavior
           }
           options.reject! { |k,v| v.nil? }
           options.reject! { |k,v| v.respond_to?(:empty?) && v.empty? }
