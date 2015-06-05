@@ -68,17 +68,42 @@ module Fog
         def post_distribution(options = {})
           default_cache_behavior = options.delete('DefaultCacheBehavior')
           viewer_certificate = options.delete('ViewerCertificate')
-          allowed_methods = options.delete('AllowedMethods')
 
           options['CallerReference'] = Time.now.to_i.to_s
           data = '<?xml version="1.0" encoding="UTF-8"?>'
           data << "<DistributionConfig xmlns=\"http://cloudfront.amazonaws.com/doc/#{@version}/\">"
           data << ruby_to_xml(options)
-          data << ruby_to_xml(default_cache_behavior) if not default_cache_behavior.nil?
-          data << ruby_to_xml(viewer_certificate) if not viewer_certificate.nil?
-          data << ruby_to_xml(allowed_methods) if not allowed_methods.nil?
+
+          if not default_cache_behavior.nil?
+            data << "<DefaultCacheBehavior>"
+
+            # Allowed methods inside default cache behavior
+            allowed_methods = default_cache_behavior.delete('AllowedMethods')
+            if not allowed_methods.nil?
+              data << "<AllowedMethods>"
+              items = allowed_methods['Items']
+              allowed_methods['Items'] = ruby_to_xml(items)
+              data << ruby_to_xml(allowed_methods)
+              data << "</AllowedMethods>"
+            end
+
+            # Parse items first
+            items = default_cache_behavior['ForwardedValues']['Headers']['Items']
+            default_cache_behavior['ForwardedValues']['Headers']['Items'] = ruby_to_xml(items)
+            # Then parse the Headers hash
+            headers = default_cache_behavior['ForwardedValues']['Headers']
+            default_cache_behavior['ForwardedValues']['Headers'] = ruby_to_xml(headers)
+            # Cookies also need a special case
+            cookies = default_cache_behavior['ForwardedValues']['Cookies']
+            default_cache_behavior['ForwardedValues']['Cookies'] = ruby_to_xml(cookies)
+            # Now it should ok to parse the rest
+            data << ruby_to_xml(default_cache_behavior)
+            data << "</DefaultCacheBehavior>"
+          end
+
+          data << ruby_to_xml({'ViewerCertificate' => viewer_certificate}) if not viewer_certificate.nil?
           data << "</DistributionConfig>"
-          puts data; return
+
           request({
             :body       => data,
             :expects    => 201,
