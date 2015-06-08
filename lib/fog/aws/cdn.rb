@@ -167,17 +167,25 @@ EOF
           @aws_session_token     = options[:aws_session_token]
           @aws_credentials_expire_at = options[:aws_credentials_expire_at]
 
-          @hmac       = Fog::HMAC.new('sha1', @aws_secret_access_key)
+          @signer     = Fog::AWS::SignatureV4.new( @aws_access_key_id, @aws_secret_access_key, @region, 'cloudfront')
         end
 
         def request(params, &block)
           refresh_credentials_if_expired
 
-          params[:headers] ||= {}
-          params[:headers]['Date'] = Fog::Time.now.to_date_header
-          params[:headers]['x-amz-security-token'] = @aws_session_token if @aws_session_token
-          params[:headers]['Authorization'] = "AWS #{@aws_access_key_id}:#{signature(params)}"
-          params[:path] = "/#{@version}/#{params[:path]}"
+          body, headers = Fog::AWS.signed_params_v4(
+            params,
+            {'Content-Type' => 'application/x-www-form-urlencoded'},
+            {
+              :host               => @host,
+              :path               => "/#{@version}/#{params[:path]}",
+              :port               => @port,
+              :version            => @version,
+              :signer             => @signer,
+              :aws_session_token  => @aws_session_token,
+              :method             => "POST"
+            }
+          )
 
           if @instrumentor
             @instrumentor.instrument("#{@instrumentor_name}.request", params) do

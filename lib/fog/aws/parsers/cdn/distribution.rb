@@ -13,6 +13,10 @@ module Fog
             when 'CustomOrigin', 'S3Origin'
               @origin = name
               @response['DistributionConfig'][@origin] = {}
+            when 'ViwerCertificate'
+              @response['ViwerCertificate'] = {}
+            when 'Origins'
+              @response['Origins'] = {}
             end
           end
 
@@ -46,6 +50,8 @@ module Fog
               @response['DistributionConfig']['RequireProtocols'] = value
             when 'Self'
               @response['DistributionConfig']['TrustedSigners'] << 'Self'
+            when 'SSLSupportMethod', 'MinimumProtocolVersion', 'IAMCertificateId'
+              @response['ViewerCertificate'][name] = value
             end
           end
         end

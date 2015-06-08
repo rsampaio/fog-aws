@@ -67,13 +67,16 @@ module Fog
 
         def post_distribution(options = {})
           default_cache_behavior = options.delete('DefaultCacheBehavior')
-          viewer_certificate = options.delete('ViewerCertificate')
+          viewer_certificate     = options.delete('ViewerCertificate')
+          origins                = options.delete('Origins')
+          aliases                = options.delete('Aliases')
 
           options['CallerReference'] = Time.now.to_i.to_s
           data = '<?xml version="1.0" encoding="UTF-8"?>'
           data << "<DistributionConfig xmlns=\"http://cloudfront.amazonaws.com/doc/#{@version}/\">"
           data << ruby_to_xml(options)
 
+          # Parse inner levels of DefaultCacheBehavior
           if not default_cache_behavior.nil?
             data << "<DefaultCacheBehavior>"
 
@@ -101,18 +104,41 @@ module Fog
             data << "</DefaultCacheBehavior>"
           end
 
+          # Parse inner levels of origins
+          if not origins.nil?
+            data << "<Origins>"
+            data << ruby_to_xml({ "Quantity" => origins['Quantity']})
+            data << "<Items>"
+            for origin in origins['Origin'] do
+              data << ruby_to_xml(origin)
+            end
+            data << "</Items>"
+            data << "</Origins>"
+          end
+
+          # Parse inner levels of Aliases
+          if not aliases.nil?
+            data << "<Aliases>"
+            data << ruby_to_xml({"Quantity" => aliases['Quantity']})
+            data << "<Items>"
+            for item in aliases['Items']['CNAME'] do
+              data << ruby_to_xml({"CNAME" => item})
+            end
+            data << "</Aliases>"
+          end
+
           data << ruby_to_xml({'ViewerCertificate' => viewer_certificate}) if not viewer_certificate.nil?
           data << "</DistributionConfig>"
 
-          request({
-            :body       => data,
-            :expects    => 201,
-            :headers    => { 'Content-Type' => 'text/xml' },
-            :idempotent => true,
-            :method     => 'POST',
-            :parser     => Fog::Parsers::CDN::AWS::Distribution.new,
-            :path       => "/distribution"
-          })
+          request(
+            'Body'       => data,
+            'Expects'    => 201,
+            'Headers'    => { 'Content-Type' => 'text/xml' },
+            'IdemPotent' => true,
+            'Method'     => 'POST',
+            'Path'       => "/distribution",
+            :parser     => Fog::Parsers::CDN::AWS::Distribution.new
+          )
         end
 
         # Helper function to parse multiple levels of XML
