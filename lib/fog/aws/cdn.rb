@@ -4,7 +4,7 @@ module Fog
       extend Fog::AWS::CredentialFetcher::ServiceMethods
 
       requires :aws_access_key_id, :aws_secret_access_key
-      recognizes :host, :path, :port, :scheme, :version, :persistent, :use_iam_profile, :aws_session_token, :aws_credentials_expire_at, :instrumentor, :instrumentor_name
+      recognizes :host, :path, :port, :scheme, :version, :persistent, :use_iam_profile, :aws_session_token, :aws_credentials_expire_at, :instrumentor, :instrumentor_name, :region
 
       model_path 'fog/aws/models/cdn'
       model       :distribution
@@ -151,7 +151,7 @@ EOF
           @persistent = options.fetch(:persistent, true)
           @port       = options[:port]      || 443
           @scheme     = options[:scheme]    || 'https'
-          @version    = options[:version]  || '2010-11-01'
+          @version    = options[:version]  || '2014-11-06'
           @connection = Fog::XML::Connection.new("#{@scheme}://#{@host}:#{@port}#{@path}", @persistent, @connection_options)
         end
 
@@ -166,7 +166,7 @@ EOF
           @aws_secret_access_key = options[:aws_secret_access_key]
           @aws_session_token     = options[:aws_session_token]
           @aws_credentials_expire_at = options[:aws_credentials_expire_at]
-
+          @region = options.fetch(:region, 'us-east-1')
           @signer     = Fog::AWS::SignatureV4.new( @aws_access_key_id, @aws_secret_access_key, @region, 'cloudfront')
         end
 
@@ -198,7 +198,7 @@ EOF
           end
         end
 
-        def _request(body, headers, idempotent, &block)
+        def _request(body, headers, idempotent, parser)
           @connection.request({
                                 :body       => body,
                                 :expects    => 200,
