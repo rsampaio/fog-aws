@@ -170,8 +170,10 @@ EOF
           @signer     = Fog::AWS::SignatureV4.new( @aws_access_key_id, @aws_secret_access_key, @region, 'cloudfront')
         end
 
-        def request(params, &block)
+        def request(params)
           refresh_credentials_if_expired
+          idempotent  = params.delete(:idempotent)
+          parser      = params.delete(:parser)
 
           body, headers = Fog::AWS.signed_params_v4(
             params,
@@ -189,22 +191,33 @@ EOF
 
           if @instrumentor
             @instrumentor.instrument("#{@instrumentor_name}.request", params) do
-              _request(params, &block)
+              _request(body, headers, idempotent, parser)
             end
           else
-            _request(params, &block)
+            _request(body, headers, idempotent, parser)
           end
         end
 
-        def _request(params, &block)
-          @connection.request(params, &block)
+        def _request(body, headers, idempotent, &block)
+          @connection.request({
+                                :body       => body,
+                                :expects    => 200,
+                                :headers    => headers,
+                                :idempotent => idempotent,
+                                :method     => 'POST',
+                                :parser     => parser
+                              })
+        rescue Excon::Errors::HTTPStatusError => error
+          match = Fog::AWS::Errors.match_error(error)
+          raise if match.empty?
+          raise case match[:code]
+                when 'NotFound', 'Unknown'
+                  Fog::CDN::AWS::NotFound.slurp(error, match[:message])
+                else
+                  Fog::Compute::AWS::Error.slurp(error, "#{match[:code]} => #{match[:message]}")
+                end
         end
 
-        def signature(params)
-          string_to_sign = params[:headers]['Date']
-          signed_string = @hmac.sign(string_to_sign)
-          Base64.encode64(signed_string).chomp!
-        end
       end
     end
   end
