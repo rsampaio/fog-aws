@@ -147,12 +147,12 @@ EOF
           @instrumentor_name = options[:instrumentor_name] || 'fog.aws.cdn'
           @connection_options = options[:connection_options] || {}
           @host       = options[:host]      || 'cloudfront.amazonaws.com'
-          @path       = options[:path]      || '/'
+          @path       = options[:path]      || '/distribution'
           @persistent = options.fetch(:persistent, true)
           @port       = options[:port]      || 443
           @scheme     = options[:scheme]    || 'https'
           @version    = options[:version]  || '2014-11-06'
-          @connection = Fog::XML::Connection.new("#{@scheme}://#{@host}:#{@port}#{@path}", @persistent, @connection_options)
+          @connection = Fog::XML::Connection.new("#{@scheme}://#{@host}:#{@port}/#{@version}#{@path}", @persistent, @connection_options)
         end
 
         def reload
@@ -167,55 +167,42 @@ EOF
           @aws_session_token     = options[:aws_session_token]
           @aws_credentials_expire_at = options[:aws_credentials_expire_at]
           @region = options.fetch(:region, 'us-east-1')
-          @signer     = Fog::AWS::SignatureV4.new( @aws_access_key_id, @aws_secret_access_key, @region, 'cloudfront')
+          @signer = Fog::AWS::SignatureV4.new( @aws_access_key_id, @aws_secret_access_key, @region, 'cloudfront')
         end
 
         def request(params)
           refresh_credentials_if_expired
-          idempotent  = params.delete(:idempotent)
-          parser      = params.delete(:parser)
 
-          body, headers = Fog::AWS.signed_params_v4(
-            params,
-            {'Content-Type' => 'application/x-www-form-urlencoded'},
-            {
-              :host               => @host,
-              :path               => "/#{@version}/#{params[:path]}",
-              :port               => @port,
-              :version            => @version,
-              :signer             => @signer,
-              :aws_session_token  => @aws_session_token,
-              :method             => "POST"
-            }
-          )
+          date = Fog::Time.now
+
+          headers = {
+            'Host'           => @host,
+            'Content-type'   => 'text/xml',
+            'x-amz-date'     => date.to_iso8601_basic
+          }
+
+          body = params.delete('Body')
+
+          params.merge!({
+                          :path       => "/#{@version}#{params[:path]}",
+                          :body       => body,
+                          :headers    => headers,
+                        })
+
+          # Content-length;content-type;host;user-agent;x-amz-date
+          headers['Authorization'] = @signer.sign(params, date)
 
           if @instrumentor
             @instrumentor.instrument("#{@instrumentor_name}.request", params) do
-              _request(body, headers, idempotent, parser)
+              _request(params)
             end
           else
-            _request(body, headers, idempotent, parser)
+            _request(params)
           end
         end
 
-        def _request(body, headers, idempotent, parser)
-          @connection.request({
-                                :body       => body,
-                                :expects    => 200,
-                                :headers    => headers,
-                                :idempotent => idempotent,
-                                :method     => 'POST',
-                                :parser     => parser
-                              })
-        rescue Excon::Errors::HTTPStatusError => error
-          match = Fog::AWS::Errors.match_error(error)
-          raise if match.empty?
-          raise case match[:code]
-                when 'NotFound', 'Unknown'
-                  Fog::CDN::AWS::NotFound.slurp(error, match[:message])
-                else
-                  Fog::Compute::AWS::Error.slurp(error, "#{match[:code]} => #{match[:message]}")
-                end
+        def _request(params)
+          @connection.request(params)
         end
 
       end

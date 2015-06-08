@@ -4,17 +4,17 @@ module Fog
       module AWS
         class Distribution < Fog::Parsers::Base
           def reset
-            @response = { 'DistributionConfig' => { 'CNAME' => [], 'Logging' => {}, 'TrustedSigners' => [] } }
+            @response = { 'DistributionConfig' => { 'CNAME' => [], 'Logging' => {}, 'TrustedSigners' => [], 'ViewerCertificate' => {} } }
           end
 
           def start_element(name, attrs = [])
             super
             case name
-            when 'CustomOrigin', 'S3Origin'
+            when 'CustomOriginConfig', 'S3Origin'
               @origin = name
               @response['DistributionConfig'][@origin] = {}
-            when 'ViwerCertificate'
-              @response['ViwerCertificate'] = {}
+            when 'Origin'
+              @origin_id = name
             when 'Origins'
               @response['Origins'] = {}
             end
@@ -31,7 +31,11 @@ module Fog
             when 'DNSName', 'OriginAccessIdentity', 'OriginProtocolPolicy'
               @response['DistributionConfig'][@origin][name] = value
             when 'DomainName', 'Id', 'Status'
-              @response[name] = value
+              if @origin_id
+                @response['Origins'][name] = value
+              else
+                @response[name] = value
+              end
             when 'CallerReference', 'Comment', 'DefaultRootObject', 'Origin', 'OriginAccessIdentity'
               @response['DistributionConfig'][name] = value
             when 'Enabled'
@@ -50,8 +54,8 @@ module Fog
               @response['DistributionConfig']['RequireProtocols'] = value
             when 'Self'
               @response['DistributionConfig']['TrustedSigners'] << 'Self'
-            when 'SSLSupportMethod', 'MinimumProtocolVersion', 'IAMCertificateId'
-              @response['ViewerCertificate'][name] = value
+            when 'IAMCertificateId', 'SSLSupportMethod', 'MinimumProtocolVersion'
+              @response['DistributionConfig']['ViewerCertificate'][name] = value
             end
           end
         end
